@@ -1,0 +1,23 @@
+services:
+  topogen:
+    build: .
+    image: topogen:latest
+    restart: unless-stopped
+    ports:
+      - "${TOPOGEN_PORT:-8090}:8080"
+    environment:
+      TOPOGEN_DATA: /data
+      # 放在 HTTPS 反向代理后面时设为 1，访客 cookie 只通过 HTTPS 发送
+      TOPOGEN_SECURE_COOKIE: "${TOPOGEN_SECURE_COOKIE:-0}"
+    command: ["-max-sessions", "${TOPOGEN_MAX_SESSIONS:-8}", "-idle-ttl", "${TOPOGEN_IDLE_TTL:-15m}"]
+    volumes:
+      - topogen-data:/data
+    # 停止时服务会把所有模拟写盘，大地图需要几秒
+    stop_grace_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: ${TOPOGEN_MEMORY:-4g}
+
+volumes:
+  topogen-data:

@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TopoGen 侵蚀工作台</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="hyp-mark" aria-hidden="true"></span>TopoGen</div>
+  <div class="session">
+    <span id="rendererLabel" class="mono muted small" title="地图渲染方式"></span>
+    <span id="sessionLabel" class="mono muted">未创建模拟</span>
+    <span id="stateChip" class="chip" hidden></span>
+    <span id="readOnlyChip" class="chip readonly" hidden title="这是别人分享的模拟，你可以查看和观察像素，但不能控制">只读</span>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="panel params" aria-label="参数">
+    <form id="paramsForm">
+      <div class="panel-head">
+        <h2>新建模拟</h2>
+        <select id="preset" aria-label="预设">
+          <option value="quick">快速预览 200²</option>
+          <option value="legacy">原版参数 400² ×2</option>
+          <option value="island">群岛 300²</option>
+        </select>
+      </div>
+
+      <fieldset>
+        <legend>地图</legend>
+        <label>宽 <input id="width" name="width" type="number" min="16" max="800" required></label>
+        <label>高 <input id="length" name="length" type="number" min="16" max="800" required></label>
+        <label class="wide">seed <input id="seed" name="seed" type="number" placeholder="留空随机"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>山丘与山脊</legend>
+        <label>hill <input id="hills" name="hills" type="number" min="0" max="2000"></label>
+        <label>hill 宽 <input id="hillWide" name="hillWide" type="number" min="0" max="400"></label>
+        <label>ridge <input id="ridges" name="ridges" type="number" min="0" max="50"></label>
+        <label>ridge 长 <input id="ridgeLen" name="ridgeLen" type="number" min="0" max="200"></label>
+        <label>ridge 宽 <input id="ridgeWide" name="ridgeWide" type="number" min="1" max="400"></label>
+        <label>stuck <input id="stuck" name="stuck" type="number" min="0" max="50"></label>
+        <label>花瓣形状
+          <select id="petalShape" name="petalShape">
+            <option value="0">0 圆形</option>
+            <option value="1">1 尖角</option>
+            <option value="2">2 细腰长叶</option>
+            <option value="3">3 圆润</option>
+          </select>
+        </label>
+        <label>花瓣数 <input id="petalNum" name="petalNum" type="number" min="0" max="12" step="0.5"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>侵蚀</legend>
+        <label>水滴数 <input id="dropNum" name="dropNum" type="number" min="0" max="200000" step="1000"></label>
+        <label>每批步数 <input id="times" name="times" type="number" min="1" max="200"></label>
+        <label>放大次数 <input id="enlarge" name="enlarge" type="number" min="0" max="2"></label>
+        <label class="check wide"><input id="fixField" name="fixField" type="checkbox"> 修复初始场向量</label>
+        <label class="check wide"><input id="fixMiddle" name="fixMiddle" type="checkbox"> 修复中途侵蚀判断</label>
+        <label class="check wide"><input id="autoRun" name="autoRun" type="checkbox" checked> 生成后自动开始</label>
+      </fieldset>
+
+      <p id="sharedNote" class="note small" hidden>已载入分享的参数。参数和 seed 相同，生成结果就完全相同。</p>
+      <p id="formError" class="error" role="alert" hidden></p>
+      <button id="createBtn" class="primary" type="submit">生成地形</button>
+    </form>
+
+    <section class="mine">
+      <div class="panel-head">
+        <h2>我的模拟</h2>
+        <button id="refreshMine" type="button" class="link small">刷新</button>
+      </div>
+      <p id="mineEmpty" class="muted small">生成的模拟会自动保存，可以随时回来继续。</p>
+      <ul id="mineList" class="mine-list"></ul>
+    </section>
+  </aside>
+
+  <main class="stage">
+    <div class="layers" role="radiogroup" aria-label="图层">
+      <button type="button" class="layer on" data-layer="terrain" role="radio" aria-checked="true">地形</button>
+      <button type="button" class="layer" data-layer="erosion" role="radio" aria-checked="false">侵蚀量</button>
+      <button type="button" class="layer" data-layer="flow" role="radio" aria-checked="false">流量</button>
+      <button type="button" class="layer" data-layer="water" role="radio" aria-checked="false">积水</button>
+      <label class="check overlay"><input id="flowOverlay" type="checkbox" checked> 叠加河流</label>
+    </div>
+    <div id="viewport" class="viewport">
+      <canvas id="glCanvas" aria-hidden="true"></canvas>
+      <canvas id="mapCanvas" aria-label="地图，鼠标悬停查看像素数据，点击加入观察"></canvas>
+      <div id="tooltip" class="tooltip mono" hidden></div>
+      <div id="empty" class="empty">
+        <p class="empty-title">还没有地图</p>
+        <p>在左侧选择预设或调整参数，点击“生成地形”。生成后可以暂停、单步，并用鼠标查看每个像素的侵蚀数据。</p>
+      </div>
+      <div id="legend" class="legend mono" hidden></div>
+    </div>
+    <div class="controls">
+      <button id="runBtn" type="button" class="primary" disabled>开始</button>
+      <button id="stepBtn" type="button" disabled title="暂停时推进 10 个 tick">单步 ×10</button>
+      <div class="speed" role="radiogroup" aria-label="速度">
+        <span class="muted">速度</span>
+        <button type="button" data-speed="1">1</button>
+        <button type="button" data-speed="2">2</button>
+        <button type="button" data-speed="3">3</button>
+        <button type="button" data-speed="4">4</button>
+        <button type="button" data-speed="5" class="on">最快</button>
+      </div>
+      <div class="progress" aria-label="进度"><i id="progressBar"></i></div>
+      <span id="progressText" class="mono muted">0 / 0</span>
+      <div class="menu-wrap">
+        <button id="shareBtn" type="button" disabled aria-haspopup="true" aria-expanded="false">分享</button>
+        <div id="shareMenu" class="menu" role="menu" hidden>
+          <button type="button" role="menuitem" data-share="view">复制查看链接<span>别人打开后实时观看这个模拟</span></button>
+          <button type="button" role="menuitem" data-share="params">复制参数链接<span>别人用相同参数生成同一张地图</span></button>
+        </div>
+      </div>
+      <div class="menu-wrap">
+        <button id="exportBtn" type="button" disabled aria-haspopup="true" aria-expanded="false">导出</button>
+        <div id="exportMenu" class="menu" role="menu" hidden>
+          <a role="menuitem" data-fmt="png">彩色预览 PNG<span>地形 + 河流，放大 2 倍</span></a>
+          <a role="menuitem" data-fmt="height16">高度图 16-bit PNG<span>灰度，最低 0 / 最高 65535</span></a>
+          <a role="menuitem" data-fmt="r16">高度图 RAW .r16<span>小端 uint16，可导入 Unity / Unreal</span></a>
+          <a role="menuitem" data-fmt="flow16">流量图 16-bit PNG<span>对数缩放的累计流量</span></a>
+          <a role="menuitem" data-fmt="erosion16">侵蚀深度 16-bit PNG<span>t0 − t，沉积处为 0</span></a>
+          <a role="menuitem" data-fmt="watermask">水体蒙版 PNG<span>海洋 255，积水 64–254</span></a>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <aside class="panel inspector" aria-label="像素与统计">
+    <section>
+      <div class="panel-head">
+        <h2>像素</h2>
+        <span id="pixelCoord" class="mono muted">—</span>
+      </div>
+      <p id="pixelHint" class="muted small">鼠标移到地图上查看，点击把像素加入观察列表（最多 4 个）。</p>
+      <dl id="pixelBasic" class="kv"></dl>
+      <div id="pixelDetail" hidden>
+        <h3>详情 <span id="pinNote" class="muted small"></span></h3>
+        <dl id="pixelExtra" class="kv"></dl>
+        <div class="nb-wrap">
+          <span class="muted small">周围 5×5 高度</span>
+          <div id="neighborhood" class="nb mono"></div>
+        </div>
+      </div>
+    </section>
+    <section>
+      <div class="panel-head">
+        <h2>观察列表</h2>
+        <span id="watchCount" class="mono muted small">0 / 4</span>
+      </div>
+      <p id="watchHint" class="muted small">点击地图上的像素开始记录它的高度变化。再次点击当前选中的像素可移除。</p>
+      <ul id="watchList" class="watch-list"></ul>
+      <div id="historyBox" hidden>
+        <div class="history-head small">
+          <span><i class="sw sw-t"></i>高度 t</span>
+          <span><i class="sw sw-l"></i>水面 t+c</span>
+        </div>
+        <canvas id="history" class="history" aria-label="选中像素的高度历史曲线"></canvas>
+      </div>
+    </section>
+    <section>
+      <h2>统计</h2>
+      <dl id="stats" class="kv"></dl>
+      <canvas id="spark" class="spark" width="260" height="56" aria-label="累计侵蚀次数曲线"></canvas>
+    </section>
+  </aside>
+</div>
+<div id="toast" class="toast" role="status" hidden></div>
+<script src="render-gl.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

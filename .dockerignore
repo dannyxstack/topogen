@@ -1,0 +1,8 @@
+.claude
+bin
+data
+output
+legacy
+*.png
+Dockerfile
+compose.yaml

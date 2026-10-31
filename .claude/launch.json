@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "topogen",
+      "runtimeExecutable": "go",
+      "runtimeArgs": ["run", "./cmd/server", "-addr", ":8090", "-dev", "web/static"],
+      "port": 8090
+    }
+  ]
+}
